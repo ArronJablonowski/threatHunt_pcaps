@@ -1,4 +1,4 @@
-Threat Hunt PCaps - 
+threatHunt_pcaps.sh - script will parse pcap files and output results to labled directories. Functions can be commneted out at the bottom of script. 
 
 
 
