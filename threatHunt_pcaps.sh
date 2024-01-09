@@ -11,45 +11,32 @@
 ##  IF Modifying - 
 ##   TShark Filters that use "{}" on Ubuntu don't like commas for seperators. ie. {1,2,3}. Use a space instead. 
 ##   TShark Filters on MacOS will use commas in filters. ie. {1,2,3}
-##  Add TShark to MacOS path - 
-##    ~/$ export PATH=$PATH:/Applications/Wireshark.app/Contents/MacOS  
-
-
-# Get OS Type for TShark Filter Syntax issues {MacOS/comma vs. Linux/space} - SCRIPT LOGIC: If "Darwin"/MacOS, else assume Linux  
-OSTYPE=$(uname -a | cut -d ' ' -f 1) 
-
+##
+ 
 
 ### GET STRANGE PORTS ###
-function getStrangePorts() {
+getStrangePorts () {
     echo "Analyzing Ports"
     mkdir -p ./strangeports
     # Get all NON TCP Ports and all TCP Ports that are not in filter {} 
-    if [[ "$OSTYPE" == "Darwin" ]]; then # If MacOS 
-        for f in *.pcap*; do tshark -r $f -Y "!tcp.port in {22,23,25,80,443,445,993,995,8000..8005}" -w ./strangeports/strangeports-$f;done 
-    else # If NOT MacOS, Assuming Linux 
-        for f in *.pcap*; do tshark -r $f -Y "!tcp.port in {22 23 25 80 443 445 993 995 8000..8005}" -w ./strangeports/strangeports-$f;done 
-    fi
+    for f in *.pcap*; do tshark -r $f -Y "!tcp.port in {22 23 25 80 443 445 993 995 8000..8005}" -w ./strangeports/strangeports-$f;done 
     mergecap -w ./strangeports/allstrangeports.pcapng ./strangeports/* 
-    rm ./strangeports/strangeports-*
-    
+    rm ./strangeports/strangeports-* 
+
 }
 
 ### GeoIP Country Codes ###
-function getBadCountryCodes() {
+getBadCountryCodes () {
     echo "Analyzing GEO IPs"
     mkdir -p ./badcountryGeoIP
     # Find any GeoIP data to weird countries
-    if [[ "$OSTYPE" == "Darwin" ]]; then # If MacOS  
-        for f in *.pcap*; do tshark -r $f -Y "ip.geoip.country_iso in {CN,RU,NK}" -w ./badcountryGeoIP/badcountryGeoIP-$f;done 
-    else # If NOT MacOS, Assuming Linux 
-        for f in *.pcap*; do tshark -r $f -Y "ip.geoip.country_iso in {CN RU NK}" -w ./badcountryGeoIP/badcountryGeoIP-$f;done 
-    fi 
+    for f in *.pcap*; do tshark -r $f -Y "ip.geoip.country_iso in {CN RU NK}" -w ./badcountryGeoIP/badcountryGeoIP-$f;done 
     mergecap -w ./badcountryGeoIP/allbadcountryGeoIP.pcapng ./badcountryGeoIP/* 
     rm ./badcountryGeoIP/badcountryGeoIP-*
 }
 
 ### GET ALL DNS #### 
-function getDns() {
+getDns () {
     echo "Analyzing DNS"
     mkdir -p ./dns
     for f in *.pcap*; do tshark -r $f -Y "dns" -w ./dns/dns-$f;done 
@@ -63,7 +50,7 @@ function getDns() {
 }
 
 ### User Agents ###
-function getUserAgents() {
+getUserAgents () {
     echo "Analyzing User Agents"
     mkdir -p ./userAgents
     # Get all User Agents 
@@ -76,7 +63,7 @@ function getUserAgents() {
 }
 
 ### OLD TLS Versions ###
-function getTLSversion() {
+getTLSversion () {
     echo "Analyzing TLS Versions"
     mkdir -p ./outdatedTLSVersions
     #Get outdated TLSVersions (handshakes) older than TLS version 1.2 (0x0303) 
@@ -87,7 +74,7 @@ function getTLSversion() {
 }
 
 ### Detect NMAP Scans ###
-function runNmapDetection(){
+runNmapDetection () {
     echo "Running NMAP Detection"
     mkdir -p ./nmapScans
     # Attempt to find NMAP scans in the PCAP file
@@ -98,7 +85,7 @@ function runNmapDetection(){
 }
 
 ### Extract File Objects ###
-function extractFiles() {
+extractFiles () {
     echo "Extracting File Objects"
     mkdir -p ./extractedFiles
     # Attempt to extract files from Http
