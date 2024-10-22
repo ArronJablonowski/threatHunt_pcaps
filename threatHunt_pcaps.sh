@@ -12,6 +12,24 @@
 ##   TShark Filters that use "{}" on Ubuntu don't like commas for seperators. ie. {1,2,3}. Use a space instead. 
 ##   TShark Filters on MacOS will use commas in filters. ie. {1,2,3}
 ##
+##  TShark - Check that MaxMind GeoIP folder is listed 
+##           tshark -G folders 
+##
+## Tips: 
+##   Ubuntu:
+##     Ubuntu's Repo has an OLD version of Wireshark/TShark, that is missing some options and functionality. 
+##     So be sure to get the latest version by adding the Wireshark PPA:  
+##           sudo add-apt-repository ppa:wireshark-dev/stable && sudo apt update && sudo apt install -y wireshark
+##     Reconfigure to run as non-root:
+##           sudo dpkg-reconfigure wireshark-common
+##           sudo usermod -aG wireshark $(whoami)
+##           sudo chmod +x /usr/bin/dumpcap
+##
+##   MacOS: 
+##     Be sure to add TShark to your path on MacOS. 
+##     On MacOS run the follwing comands, or uncomment the following lines:  
+##           ln -s /Applications/Wireshark.app/Contents/MacOS/tshark /usr/local/bin/tshark
+##           ln -s /Applications/Wireshark.app/Contents/MacOS/mergecap /usr/local/bin/mergecap
  
 
 ### GET STRANGE PORTS ###
@@ -19,7 +37,7 @@ getStrangePorts () {
     echo "Analyzing Ports"
     mkdir -p ./strangeports
     # Get all NON TCP Ports and all TCP Ports that are not in filter {} 
-    for f in *.pcap*; do tshark -r $f -Y "!tcp.port in {22 23 25 80 443 445 993 995 8000..8005}" -w ./strangeports/strangeports-$f;done 
+    for f in *.pcap*; do tshark -r $f -Y "!tcp.port in {21,22,23,25,80,443,445,993,995,8000..8005}" -w ./strangeports/strangeports-$f;done 
     mergecap -w ./strangeports/allstrangeports.pcapng ./strangeports/* 
     rm ./strangeports/strangeports-* 
 
@@ -27,12 +45,22 @@ getStrangePorts () {
 
 ### GeoIP Country Codes ###
 getBadCountryCodes () {
-    echo "Analyzing GEO IPs"
-    mkdir -p ./badcountryGeoIP
+    echo "Analyzing 'Bad' GEO IPs"
+    mkdir -p ./badCountryGeoIP
     # Find any GeoIP data to weird countries
-    for f in *.pcap*; do tshark -r $f -Y "ip.geoip.country_iso in {CN RU NK}" -w ./badcountryGeoIP/badcountryGeoIP-$f;done 
-    mergecap -w ./badcountryGeoIP/allbadcountryGeoIP.pcapng ./badcountryGeoIP/* 
+    for f in *.pcap*; do tshark -r $f -Y "ip.geoip.country_iso in {CN,RU,NK}" -w ./badCountryGeoIP/badcountryGeoIP-$f;done 
+    mergecap -w ./badCountryGeoIP/allbadcountryGeoIP.pcapng ./badcountryGeoIP/* 
     rm ./badcountryGeoIP/badcountryGeoIP-*
+}
+
+### GeoIP Country Codes ###
+getAllCountryCodes () {
+    echo "Analyzing All GEO IPs"
+    mkdir -p ./allCountryGeoIP
+    # Find any GeoIP data to weird countries
+    for f in *.pcap*; do tshark -r $f -Y "ip.geoip.country_iso" -w ./allCountryGeoIP/all_countryGeoIP-$f;done 
+    mergecap -w ./allCountryGeoIP/allCountryGeoIP.pcapng ./allCountryGeoIP/* 
+    rm ./allCountryGeoIP/all_countryGeoIP-*
 }
 
 ### GET ALL DNS #### 
@@ -108,6 +136,7 @@ extractFiles () {
 ##########################
 getDns
 getStrangePorts
+getAllCountryCodes
 getBadCountryCodes
 getUserAgents
 getTLSversion
