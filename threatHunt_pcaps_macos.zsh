@@ -1,4 +1,4 @@
-## !/bin/bash 
+## !/bin/zsh 
 ##
 ## threatHunt_pcaps.sh is used to quickly parse multiple pcap files in a directory for threat hunting.  
 ##          
