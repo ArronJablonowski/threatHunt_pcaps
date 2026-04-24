@@ -24,7 +24,7 @@ After running the script, you will find results organized into labeled directori
 
 ## Functions
 
-The script includes several functions that can be executed individually. Here are the main functions:
+The script includes several functions that can be enabled/disabled *(#comment out)* at the bottom of the file. Here are the main functions:
 
 - **getStrangePorts**: Analyzes ports and outputs results to `./strangeports`.
 - **getBadCountryCodes**: Identifies GeoIP data from 'bad' countries (CN, RU, NK) and outputs results to `./badCountryGeoIP`.
