@@ -1,49 +1,108 @@
-# threatHunt_pcaps.sh
+# threatHunt_pcaps
 
-## Overview
+`threatHunt_pcaps.sh` is a portable TShark-based triage tool for quickly hunting through one or more PCAP/PCAPNG files during incident response.
 
-The `threatHunt_pcaps.sh` script is designed to quickly parse multiple pcap files in a directory for threat hunting. It includes various functions that analyze different 
-aspects of the network traffic, such as strange ports, GeoIP country codes, DNS queries, user agents, TLS versions, NMAP scans, and file extraction.
+It produces filtered evidence PCAPs, analyst-friendly text/TSV summaries, extracted file inventories, IOC matches, and an overall Markdown report.
+
+## Quick Start
+
+```bash
+chmod +x ./threatHunt_pcaps.sh
+./threatHunt_pcaps.sh -i ./captures -o ./case-001-results
+```
+
+## Requirements
+
+Required:
+
+- `tshark`
+- `mergecap`
+
+Optional:
+
+- `zeek` for Zeek log generation
+- `suricata` for EVE/signature output
+- `yara` for extracted-file scanning
+
+On macOS, Wireshark installed through Homebrew usually provides the required tools:
+
+```bash
+brew install wireshark
+```
+
+On Ubuntu, prefer the current Wireshark packages over older distro defaults when possible.
 
 ## Usage
 
-1. **Place Script in Directory**: Put the script in the same directory as the pcap files you want to analyze.
-2. **Make Executable**: Make the script executable using:
-    ```bash
-    chmod +x ./threatHunt_pcaps.sh
-    ```
-3. **Run the Script**:
-    ```bash
-    ./threatHunt_pcaps.sh
-    ```
+```bash
+./threatHunt_pcaps.sh [options]
+```
 
-## Results
+Important options:
 
-After running the script, you will find results organized into labeled directories such as `strangeports`, `badCountryGeoIP`, `allCountryGeoIP`, `dns`, `userAgents`, 
-`outdatedTLSVersions`, and `nmapScans`.
+- `-i, --input-dir DIR`: directory containing `.pcap` or `.pcapng` files.
+- `-o, --output-dir DIR`: output directory. Defaults to `threatHunt_results_<timestamp>`.
+- `-m, --modules LIST`: comma-separated modules to run.
+- `-c, --countries LIST`: watchlisted ISO country codes. Default: `CN,RU,KP`.
+- `-p, --safe-ports LIST`: common ports or ranges to suppress from the strange-port filter.
+- `--ioc-file FILE`: match local IP/domain/JA3/JA4/User-Agent indicators.
+- `--yara-rules FILE_OR_DIR`: scan extracted files with YARA.
+- `--overwrite`: replace an existing output directory.
+- `--keep-temp`: keep temporary per-input filtered PCAPs.
 
-## Functions
+Examples:
 
-The script includes several functions that can be enabled/disabled *(#comment out)* at the bottom of the file. Here are the main functions:
+```bash
+./threatHunt_pcaps.sh -i ./pcaps -o ./results --ioc-file ./iocs.txt
+./threatHunt_pcaps.sh -i ./pcaps -m dns,tls,http,beaconing,zeek
+./threatHunt_pcaps.sh -i ./pcaps --countries IR,KP,RU --safe-ports 22,53,80,443,8443
+```
 
-- **getStrangePorts**: Analyzes ports and outputs results to `./strangeports`.
-- **getBadCountryCodes**: Identifies GeoIP data from 'bad' countries (CN, RU, NK) and outputs results to `./badCountryGeoIP`.
-- **getAllCountryCodes**: Extracts all GeoIP country codes and outputs results to `./allCountryGeoIP`.
-- **getDns**: Parses DNS queries and outputs results to `./dns`.
-- **getUserAgents**: Analyzes HTTP user agents and outputs results to `./userAgents`.
-- **getTLSversion**: Detects outdated TLS versions (handshakes older than TLS 1.2) and outputs results to `./outdatedTLSVersions`.
-- **runNmapDetection**: Identifies NMAP scans in the pcap files and outputs results to `./nmapScans`.
-- **extractFiles**: Attempts to extract file objects from HTTP, SMB, and TFTP streams and saves them in `./extractedFiles`.
+## Modules
 
-## Notes
+Default modules:
 
-- The script requires `tshark` for parsing pcap files. Ensure it is installed on your system.
-- Some functions may require additional configuration, such as setting up the MaxMind GeoIP database.
+- `dns`: DNS query summaries, long-query candidates, NXDOMAIN activity.
+- `strangeports`: TCP/UDP traffic outside configured common ports.
+- `geoip`: all GeoIP traffic plus configurable watchlisted country matches.
+- `useragents`: HTTP User-Agent inventory and frequency counts.
+- `tls`: outdated TLS handshakes, SNI, JA3, and JA4 summaries.
+- `nmap`: simple Nmap-like SYN/window-size heuristic.
+- `extract`: HTTP/SMB/TFTP object extraction and SHA256 inventory.
+- `http`: HTTP host, URI, method, response, content type, authorization, and suspicious-extension summaries.
+- `beaconing`: recurring connection candidates by source/destination/port.
+- `scans`: horizontal/vertical SYN scan candidates and ICMP activity.
+- `ioc`: local indicator matching when `--ioc-file` is supplied.
 
-##  
-![alt text](https://github.com/ArronJablonowski/threatHunt_pcaps/blob/main/1.png?raw=true)
+Optional modules:
 
+- `zeek`: runs Zeek against a merged capture when `zeek` is installed.
+- `suricata`: runs Suricata per capture when `suricata` is installed.
+- `yara`: scans extracted files when `yara` and `--yara-rules` are provided.
 
-* Reveiw the results: 
+## Output
 
-![alt text](https://github.com/ArronJablonowski/threatHunt_pcaps/blob/main/2.png?raw=true)
+Each run creates:
+
+- `summary.md`: analyst index and links to key outputs.
+- `run_manifest.txt`: script version, inputs, enabled modules, TShark version, and options.
+- `run.log`: command progress and warnings.
+- Per-module folders containing filtered PCAPs and TSV/text summaries.
+
+The script writes to a fresh timestamped directory by default, so repeated runs do not merge old outputs back into new evidence.
+
+## GeoIP Notes
+
+GeoIP fields require MaxMind databases configured for Wireshark/TShark. Check the active paths with:
+
+```bash
+tshark -G folders
+```
+
+The country-code module is intentionally configurable. Treat geography as enrichment and triage context, not as a standalone verdict.
+
+## Screenshots
+
+![Initial run screenshot](https://github.com/ArronJablonowski/threatHunt_pcaps/blob/main/1.png?raw=true)
+
+![Results screenshot](https://github.com/ArronJablonowski/threatHunt_pcaps/blob/main/2.png?raw=true)

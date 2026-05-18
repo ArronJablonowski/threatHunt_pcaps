@@ -1,1 +1,4 @@
 **/.DS_Store
+threatHunt_results_*/
+case-*-results/
+*.log
