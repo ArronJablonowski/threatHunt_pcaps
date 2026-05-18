@@ -30,7 +30,7 @@ On macOS, Wireshark installed through Homebrew usually provides the required too
 brew install wireshark
 ```
 
-On Ubuntu, prefer the current Wireshark packages over older distro defaults when possible.
+On Ubuntu, use the current Wireshark packages over older distro defaults when possible.
 
 ## Usage
 
