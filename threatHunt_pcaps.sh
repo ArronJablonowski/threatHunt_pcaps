@@ -3,6 +3,8 @@ set -euo pipefail
 
 VERSION="2.0.0"
 
+# Defaults are intentionally conservative: run broad triage modules, write to a
+# timestamped output directory, and let analysts opt into external engines.
 INPUT_DIR="."
 OUTPUT_DIR=""
 MODULES="dns,strangeports,geoip,useragents,tls,nmap,extract,http,beaconing,scans,ioc"
@@ -46,6 +48,8 @@ warn() { printf '[WARN] %s\n' "$*" >&2; }
 die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Keep argument parsing dependency-free so the script remains portable across
+# macOS and common Linux incident-response workstations.
 while (($#)); do
     case "$1" in
         -i|--input-dir) INPUT_DIR="${2:-}"; shift 2 ;;
@@ -66,6 +70,8 @@ done
 [[ -d "$INPUT_DIR" ]] || die "Input directory does not exist: $INPUT_DIR"
 INPUT_DIR="$(cd "$INPUT_DIR" && pwd)"
 
+# A fresh default output directory prevents old filtered captures from being
+# merged back into a later run and muddying the evidence trail.
 if [[ -z "$OUTPUT_DIR" ]]; then
     OUTPUT_DIR="$INPUT_DIR/threatHunt_results_$(date '+%Y%m%d_%H%M%S')"
 fi
@@ -84,8 +90,11 @@ mkdir -p "$OUTPUT_DIR"
 MANIFEST="$OUTPUT_DIR/run_manifest.txt"
 SUMMARY="$OUTPUT_DIR/summary.md"
 
+# Capture stdout/stderr into run.log while still showing progress interactively.
 exec > >(tee -a "$OUTPUT_DIR/run.log") 2> >(tee -a "$OUTPUT_DIR/run.log" >&2)
 
+# Use find -print0 rather than shell globs so filenames with spaces or brackets
+# are handled safely and an empty directory fails with a clear message.
 PCAPS=()
 while IFS= read -r -d '' pcap_file; do
     PCAPS+=("$pcap_file")
@@ -100,6 +109,8 @@ module_enabled() {
     [[ ",${MODULES}," == *",${needle},"* ]]
 }
 
+# Convert user-friendly comma-separated values into Wireshark display-filter
+# set members. Port ranges are entered as 8000-8005 but TShark expects 8000..8005.
 display_filter_list() {
     local raw="$1"
     local sep="$2"
@@ -124,6 +135,8 @@ space_filter_list() {
 
 filter_set() {
     local raw="$1"
+    # Wireshark display-filter set syntax differs across versions/platforms:
+    # some accept comma separators, while older builds require spaces.
     if tshark -Y "tcp.port in {1,2}" -r "${PCAPS[0]}" -c 1 >/dev/null 2>&1; then
         printf '{%s}' "$(display_filter_list "$raw" ",")"
     else
@@ -132,6 +145,8 @@ filter_set() {
 }
 
 write_manifest() {
+    # The manifest is meant to make each run reproducible enough for case notes:
+    # inputs, tool versions, options, and output location are all captured.
     {
         printf 'threatHunt_pcaps version: %s\n' "$VERSION"
         printf 'run started: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -173,6 +188,8 @@ run_filter_module() {
     for f in "${PCAPS[@]}"; do
         base="$(basename "$f")"
         if tshark -r "$f" -Y "$filter" -w "$tmp/${out_name}-${base}" >/dev/null 2>&1; then
+            # TShark writes a valid capture file even when a filter matches no
+            # packets, so verify there is at least one frame before merging it.
             if tshark -r "$tmp/${out_name}-${base}" -T fields -e frame.number -c 1 2>/dev/null | grep -q .; then
                 outputs+=("$tmp/${out_name}-${base}")
             fi
@@ -192,6 +209,8 @@ tshark_fields_all() {
     local filter="$1"
     shift
     local f
+    # Field extraction is best-effort per capture; one malformed file should not
+    # prevent the remaining evidence set from being summarized.
     for f in "${PCAPS[@]}"; do
         tshark -n -r "$f" -Y "$filter" -T fields "$@" 2>/dev/null || warn "field extraction failed for $(basename "$f")"
     done
@@ -210,6 +229,8 @@ module_dns() {
     local dir="$OUTPUT_DIR/dns"
     mkdir -p "$dir"
     run_filter_module "dns" "dns" "dns"
+    # DNS queries are split into raw observations and ranked summaries so an
+    # analyst can pivot from long-tail domains back to the originating host.
     tshark_fields_all "dns.flags.response == 0 && dns.qry.name" -e ip.src -e dns.qry.name -E separator=$'\t' > "$dir/dns_queries_by_src.tsv"
     tshark_fields_all "dns.flags.response == 0 && dns.qry.name" -e dns.qry.name > "$dir/dns_names.raw"
     top_count "$dir/dns_names.raw" "$dir/top_dns_names.txt"
@@ -223,6 +244,8 @@ module_dns() {
 module_strangeports() {
     local ports
     ports="$(filter_set "$SAFE_PORTS")"
+    # "Strange" is environment-specific; SAFE_PORTS is configurable so teams can
+    # suppress expected local services while preserving the filtered PCAP.
     run_filter_module "strangeports" "(tcp && !(tcp.port in $ports)) || (udp && !(udp.port in $ports))" "strangeports"
     tshark_fields_all "tcp || udp" -e ip.src -e ip.dst -e tcp.dstport -e udp.dstport -E separator=$'\t' \
         | awk -F'\t' '{port=$3 ? $3 : $4; if (port) print $1 "\t" $2 "\t" port}' \
@@ -234,6 +257,8 @@ module_geoip() {
     local dir="$OUTPUT_DIR/geoip" countries
     countries="$(filter_set "$WATCH_COUNTRIES")"
     mkdir -p "$dir"
+    # GeoIP is enrichment, not attribution. Keep both all-country and watchlist
+    # outputs so the analyst can compare suspicious hits against total context.
     run_filter_module "geoip/all_countries" "ip.geoip.country_iso" "geoip"
     run_filter_module "geoip/watchlisted_countries" "ip.geoip.country_iso in $countries" "watchlisted_geoip"
     tshark_fields_all "ip.geoip.country_iso" -e ip.src -e ip.dst -e ip.geoip.src_country_iso -e ip.geoip.dst_country_iso -e ip.geoip.src_asnum -e ip.geoip.dst_asnum -e ip.geoip.src_org -e ip.geoip.dst_org -E separator=$'\t' \
@@ -254,6 +279,8 @@ module_tls() {
     local dir="$OUTPUT_DIR/tls"
     mkdir -p "$dir"
     run_filter_module "outdatedTLSVersions" "tls.handshake.version < 0x0303" "outdated_tls"
+    # SNI and TLS fingerprints survive even when payloads are encrypted and are
+    # useful pivots into proxy logs, threat intel, and endpoint telemetry.
     tshark_fields_all "tls.handshake.extensions_server_name || tls.handshake.ja3 || tls.handshake.ja4" \
         -e ip.src -e ip.dst -e tls.handshake.extensions_server_name -e tls.handshake.ja3 -e tls.handshake.ja4 -E separator=$'\t' > "$dir/tls_fingerprints.tsv"
     cut -f3 "$dir/tls_fingerprints.tsv" | sort | sed '/^[[:space:]]*$/d' | uniq -c | sort -nr > "$dir/top_sni.txt"
@@ -273,6 +300,8 @@ module_extract() {
     local dir="$OUTPUT_DIR/extractedFiles" proto f
     mkdir -p "$dir"/{http,smb,tftp}
     log "Extracting HTTP/SMB/TFTP file objects"
+    # Export-object failures are non-fatal because many captures will not contain
+    # reconstructable files for every supported protocol.
     for proto in http smb tftp; do
         for f in "${PCAPS[@]}"; do
             tshark -n -r "$f" -q --export-objects "$proto,$dir/$proto/" >/dev/null 2>&1 || true
@@ -288,6 +317,8 @@ module_extract() {
 module_http() {
     local dir="$OUTPUT_DIR/http"
     mkdir -p "$dir"
+    # Keep the HTTP table intentionally wide: it supports quick review of hosts,
+    # URIs, auth leakage, payload types, and User-Agent pivots from one file.
     tshark_fields_all "http" -e ip.src -e ip.dst -e http.request.method -e http.host -e http.request.uri -e http.response.code -e http.content_type -e http.server -e http.authorization -e http.user_agent -E separator=$'\t' > "$dir/http.tsv"
     cut -f4 "$dir/http.tsv" | sort | sed '/^[[:space:]]*$/d' | uniq -c | sort -nr > "$dir/top_http_hosts.txt"
     awk -F'\t' '$9 != "" {print}' "$dir/http.tsv" > "$dir/http_authorization_headers.tsv" || true
@@ -301,6 +332,8 @@ module_http() {
 module_beaconing() {
     local dir="$OUTPUT_DIR/beaconing"
     mkdir -p "$dir"
+    # This is a lightweight cadence heuristic, not a full statistical beacon
+    # detector: repeated source -> destination:port pairs are ranked by average gap.
     tshark_fields_all "tcp || udp" -e frame.time_epoch -e ip.src -e ip.dst -e tcp.dstport -e udp.dstport -E separator=$'\t' \
         | awk -F'\t' '
             {
@@ -326,6 +359,8 @@ module_beaconing() {
 module_scans() {
     local dir="$OUTPUT_DIR/scans"
     mkdir -p "$dir"
+    # SYN attempts are summarized by unique destinations and ports to catch both
+    # horizontal and vertical scanning patterns.
     tshark_fields_all "tcp.flags.syn == 1 && tcp.flags.ack == 0" -e ip.src -e ip.dst -e tcp.dstport -E separator=$'\t' \
         | awk -F'\t' '{print $1 "\t" $2 "\t" $3}' > "$dir/syn_attempts.tsv"
     awk -F'\t' '
@@ -362,6 +397,8 @@ module_ioc() {
     local dir="$OUTPUT_DIR/ioc"
     mkdir -p "$dir"
     log "Matching IOC file"
+    # Build one observable inventory first, then fixed-string match against it so
+    # the IOC file can contain mixed indicator types without custom parsing.
     tshark_fields_all "ip || dns || http || tls" \
         -e ip.src -e ip.dst -e dns.qry.name -e http.host -e http.request.uri -e http.user_agent -e tls.handshake.extensions_server_name -e tls.handshake.ja3 -e tls.handshake.ja4 -E separator=$'\t' \
         > "$dir/observable_inventory.tsv"
@@ -377,6 +414,8 @@ module_zeek() {
     fi
     local dir="$OUTPUT_DIR/zeek" merged="$dir/merged.pcapng"
     mkdir -p "$dir"
+    # Zeek expects one input capture per run; merge first so its logs cover the
+    # same corpus as the TShark summaries.
     mergecap -w "$merged" "${PCAPS[@]}"
     (cd "$dir" && zeek -r "$merged") || warn "zeek returned a non-zero status"
     append_summary "- [zeek logs](./zeek/)"
@@ -404,12 +443,15 @@ module_yara() {
         return
     fi
     local dir="$OUTPUT_DIR/extractedFiles"
+    # If extraction was not selected, run it here so YARA still has material to scan.
     [[ -d "$dir" ]] || module_extract
     find "$dir" -type f -print0 | xargs -0 yara -r "$YARA_RULES" > "$dir/yara_matches.txt" 2>/dev/null || true
     append_summary "- [YARA matches](./extractedFiles/yara_matches.txt)"
 }
 
 cleanup() {
+    # Temporary per-input filtered captures are useful for debugging, but noisy
+    # for normal case output.
     if [[ "$KEEP_TEMP" -ne 1 ]]; then
         rm -rf "$OUTPUT_DIR/.tmp"
     fi

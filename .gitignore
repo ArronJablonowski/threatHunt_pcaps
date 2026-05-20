@@ -2,3 +2,4 @@
 threatHunt_results_*/
 case-*-results/
 *.log
+.github

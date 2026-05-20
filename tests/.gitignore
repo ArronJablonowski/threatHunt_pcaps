@@ -1,0 +1,7 @@
+tmp/
+fixtures/generated/
+outputs/
+*.pcap
+*.pcapng
+*.log
+*.out
